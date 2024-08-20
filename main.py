@@ -116,6 +116,29 @@ def generating(api_key):
             
             print(f"{url} linki başarıyla alındı.")  # Checkpoint 8
             
+            
+            def pixabay():
+                # Pixabay API anahtarınızı buraya ekleyin
+                api_key = "39678317-faf80aed0e9382b0a022d6351"
+                query = slugify(baslik)  # Aranacak kelime
+                url = f"https://pixabay.com/api/?key={api_key}&q={query}&image_type=photo&per_page=3"
+
+                response = requests.get(url)
+                data = response.json()
+
+                # Eğer resim bulunduysa, ilk resmi indir
+                if data['hits']:
+                    image_url = data['hits'][0]['largeImageURL']
+                    img_data = requests.get(image_url).content
+
+                    with open(f"/Users/erenkocakgol/repos/postafon.com/habermomentum/static/depo/{query}.jpg", "wb") as handler:
+                        handler.write(img_data)
+                        print("Image downloaded successfully!")
+                else:
+                    print("No images found.")
+            
+            pixabay()
+            
             '''img_parent = soup.find('div', class_="card-img-wrapper")
             img_element = img_parent.find('img')
             img_url = img_element['src']
@@ -195,7 +218,7 @@ def generating(api_key):
 
             generated_text = rewrite_text(text=baslik+ " " +altbaslik+ " " +article_text).replace("#", "").replace("*", "")
             #image_path = generate_image(title, api_key)  # Resmi oluştur ve yolunu al
-            image_path = ""
+            image_path = slugify(baslik)
             all_generated_texts.append((kategori, title, generated_text, image_path))  # Resmi de ekle
             print(f"Metin başarıyla yeniden yazıldı.")  # Checkpoint 9
 
