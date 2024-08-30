@@ -16,11 +16,14 @@ import os
 import re
 import unicodedata
 import base64
+from datetime import datetime
+import pytz
 
 ##########################################################
 ## GLOBAL DEĞİŞKENLER
 
 scraped_news = dict()
+tz = pytz.timezone("Europe/Istanbul")
 
 ##########################################################
 ## KONFİGÜRASYON
@@ -50,19 +53,34 @@ def search(kategoriler):
         print(f"{kategori} kategorisi için veri çekildi.")  # Checkpoint 3
 
         soup = BeautifulSoup(response.text, 'html.parser')
+        
+        if kategori == "sporskor":
+            headlines = []
+            
+            for item in soup.find_all('a', class_="card-link", limit=10):
+                title = item.text.strip()
+                link = item['href']
+                if not link.startswith('http'):
+                    link = "https://www.ntv.com.tr" + link
+                headlines.append((title, link))
+            
+            if not headlines:
+                print(f"{kategori} kategorisi için haber bulunamadı.")  # Checkpoint 4
+            else:
+                print(f"{kategori} kategorisi için {len(headlines)} haber bulundu.")  # Checkpoint 5
+        else:    
+            headlines = []
+            for item in soup.find_all('a', class_="card-text-link text-elipsis-3", limit=10):
+                title = item.text.strip()
+                link = item['href']
+                if not link.startswith('http'):
+                    link = "https://www.ntv.com.tr" + link
+                headlines.append((title, link))
 
-        headlines = []
-        for item in soup.find_all('a', class_="card-text-link text-elipsis-3", limit=3):
-            title = item.text.strip()
-            link = item['href']
-            if not link.startswith('http'):
-                link = "https://www.ntv.com.tr" + link
-            headlines.append((title, link))
-
-        if not headlines:
-            print(f"{kategori} kategorisi için haber bulunamadı.")  # Checkpoint 4
-        else:
-            print(f"{kategori} kategorisi için {len(headlines)} haber bulundu.")  # Checkpoint 5
+            if not headlines:
+                print(f"{kategori} kategorisi için haber bulunamadı.")  # Checkpoint 4
+            else:
+                print(f"{kategori} kategorisi için {len(headlines)} haber bulundu.")  # Checkpoint 5
 
         news = []
         for i, (title, link) in enumerate(headlines, start=1):
@@ -117,10 +135,11 @@ def generating(api_key):
             print(f"{url} linki başarıyla alındı.")  # Checkpoint 8
             
             
-            def pixabay():
+            def pixabay(keywords):
                 # Pixabay API anahtarınızı buraya ekleyin
                 api_key = "39678317-faf80aed0e9382b0a022d6351"
-                query = slugify(baslik)  # Aranacak kelime
+                query = slugify(keywords)  # Aranacak kelime
+                resim_ismi = slugify(baslik)
                 url = f"https://pixabay.com/api/?key={api_key}&q={query}&image_type=photo&per_page=3"
 
                 response = requests.get(url)
@@ -131,13 +150,12 @@ def generating(api_key):
                     image_url = data['hits'][0]['largeImageURL']
                     img_data = requests.get(image_url).content
 
-                    with open(f"/Users/erenkocakgol/repos/postafon.com/habermomentum/static/depo/{query}.jpg", "wb") as handler:
+                    with open(f"/srv/static/depo/{resim_ismi}.jpg", "wb") as handler:
                         handler.write(img_data)
                         print("Image downloaded successfully!")
                 else:
                     print("No images found.")
             
-            pixabay()
             
             '''img_parent = soup.find('div', class_="card-img-wrapper")
             img_element = img_parent.find('img')
@@ -193,16 +211,16 @@ def generating(api_key):
                 except Exception as e:
                     print(f"Resim URL'den indirilirken hata oluştu: {str(e)}")'''
             
-            def rewrite_text(text, length=400, i=0):
+            def rewrite_text(text, length=800, i=0):
                 try:
                     response = openai.ChatCompletion.create(
                         model="gpt-4o-mini",  # Modeli burada belirtiyorsunuz
                         messages=[
-                            {"role": "system", "content": "Bu görevde, eğer varsa verilen haber metninin başlığındaki olayı (alakasız konuları atlayarak) Türkçe olarak yeniden yazacaksınız. 'NTV' kelimesi olmamalı ve her konuyu başlıklar ile ayırmalısınız. Yoksa cevap vermeyin."},
+                            {"role": "system", "content": "Bu görevde verilen haber metnini Türkçe olarak yaklaşık aynı sayıda karakter kullanarak ve paragraflamaya dikkat ederek yeniden yazacaksınız. 'NTV' kelimesi olmamalı. Metnin başında iki adet '$$$' işareti arasında anahtar kelimeleri belirt."},
                             {"role": "user", "content": f"Haber Metni = {text}"}
                         ],
                         max_tokens=length + 50,  # Döndürülecek maksimum token sayısı
-                        temperature=0.6,  # Yaratıcılık seviyesi
+                        temperature=0.7,  # Yaratıcılık seviyesi
                     )
                     return response.choices[0].message['content'].strip()
 
@@ -218,8 +236,25 @@ def generating(api_key):
 
             generated_text = rewrite_text(text=baslik+ " " +altbaslik+ " " +article_text).replace("#", "").replace("*", "")
             #image_path = generate_image(title, api_key)  # Resmi oluştur ve yolunu al
+                        
+            def extract_keyword(template_str):
+                # Şablonu tanımlayan regex kalıbı
+                pattern = r'^\$\$\$(.*?)\$\$\$'
+                
+                # Regex ile eşleşmeyi bul
+                match = re.match(pattern, template_str)
+                
+                # Eğer eşleşme varsa, anahtar kelimeyi döndür
+                if match:
+                    return match.group(1).strip()
+                else:
+                    return None
+            
+            keywords = extract_keyword(generated_text)
+            pixabay(keywords)
+            
             image_path = slugify(baslik)
-            all_generated_texts.append((kategori, title, generated_text, image_path))  # Resmi de ekle
+            all_generated_texts.append((kategori, title, generated_text.replace(f"$$$ {keywords} $$$", "").replace(f"$$${keywords}$$$", ""), image_path, keywords))  # Resmi de ekle
             print(f"Metin başarıyla yeniden yazıldı.")  # Checkpoint 9
 
     if not all_generated_texts:
@@ -271,10 +306,16 @@ def create_db():
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS news (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        kategori TEXT NOT NULL DEFAULT 'genel',
+        kategori TEXT NOT NULL DEFAULT 'Genel',
         title TEXT NOT NULL DEFAULT 'Başlık Yok',
         content TEXT NOT NULL DEFAULT 'İçerik Yok',
-        image TEXT  -- Resim yolunu tutacak sütun
+        image TEXT,  -- Resim yolunu tutacak sütun
+        keywords TEXT,
+        pp_img TEXT NOT NULL DEFAULT 'img/star.svg',
+        author TEXT NOT NULL DEFAULT 'Sistem Akışı',
+        like INTEGER NOT NULL DEFAULT 0,
+        repost INTEGER NOT NULL DEFAULT 0,
+        date TEXT
     )
     ''')
     
@@ -282,27 +323,35 @@ def create_db():
     conn.close()
 
 def save_to_db(news_data):
-    # Veritabanını yeniden oluştur
+
     if os.path.exists('news.db'):
         os.remove('news.db')
+    
     create_db()
-
+    
     conn = sqlite3.connect('news.db')
     cursor = conn.cursor()
 
-    # Varsayılan değerlerle NULL olanları değiştir
     processed_data = []
     for data in news_data:
-        # Eğer değerlerden biri None ise varsayılan değerle değiştir
-        processed_data.append((
-            data[0] if data[0] is not None else 'genel',
-            data[1] if data[1] is not None else 'Başlık Yok',
-            data[2] if data[2] is not None else 'İçerik Yok',
-            data[3] if data[3] is not None else ''
-        ))
+        # Her bir tuple için eleman sayısını kontrol edip eksik olanları varsayılan değerlerle doldur
+        kategori = data[0] if len(data) > 0 and data[0] is not None else 'Genel'
+        title = data[1] if len(data) > 1 and data[1] is not None else 'Başlık Yok'
+        content = data[2] if len(data) > 2 and data[2] is not None else 'İçerik Yok'
+        image = data[3] if len(data) > 3 and data[3] is not None else None
+        keywords = data[4] if len(data) > 4 and data[4] is not None else 'haber'
+        pp_img = data[5] if len(data) > 5 and data[5] is not None else 'img/star.svg'
+        author = data[6] if len(data) > 6 and data[6] is not None else 'Sistem Akışı'
+        like = data[7] if len(data) > 7 and data[7] is not None else 0
+        repost = data[8] if len(data) > 8 and data[8] is not None else 0
+        date = data[9] if len(data) > 9 and data[9] is not None else datetime.now(tz=tz).strftime("%Y-%m-%d %H:%M:%S")
+        
+
+        processed_data.append((kategori, title, content, image, keywords, pp_img, author, like, repost, date))
 
     cursor.executemany('''
-    INSERT INTO news (kategori, title, content, image) VALUES (?, ?, ?, ?)
+    INSERT INTO news (kategori, title, content, image, keywords, pp_img, author, like, repost, date) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', processed_data)
     
     conn.commit()
