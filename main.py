@@ -137,7 +137,7 @@ def generating(api_key):
             
             def pixabay(keywords):
                 # Pixabay API anahtarınızı buraya ekleyin
-                api_key = "39678317-faf80aed0e9382b0a022d6351"
+                api_key = "<<PIXABAY API KEY>>"
                 query = slugify(keywords)  # Aranacak kelime
                 resim_ismi = slugify(baslik)
                 url = f"https://pixabay.com/api/?key={api_key}&q={query}&image_type=photo&per_page=3"
